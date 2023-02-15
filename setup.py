@@ -7,9 +7,10 @@ def readme():
 
 
 setup(name='torchcpd',
-      version='1.0.0',
+      version='1.0.1',
       description='PyTorch Implementation of the Coherent Point Drift Algorithm',
       long_description=readme(),
+      long_description_content_type='text/markdown',
       url='https://github.com/ramtingh/torchcpd',
       classifiers=[
           'Development Status :: 3 - Alpha',
