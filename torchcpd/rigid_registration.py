@@ -127,7 +127,7 @@ class RigidRegistration(EMRegistration):
 		"""
 		qprev = self.q
 
-		trAR = torch.trace((self.A@self.R))
+		trAR = torch.trace((self.A @ self.R))
 		# noinspection PyArgumentList
 		xPx = torch.dot(self.Pt1.T, torch.multiply(self.X_hat, self.X_hat).sum(axis=1))
 		self.q = (xPx - 2 * self.s * trAR + self.s * self.s * self.YPY) / \

@@ -27,7 +27,7 @@ def initialize_sigma2(X, Y):
 	(M, _) = Y.shape
 	diff = X[None, :, :] - Y[:, None, :]
 	err = diff ** 2
-	return torch.tensor(np.sum(err) / (D * M * N))
+	return err.sum() / (D * M * N)
 
 
 def lowrankQS(G, beta, num_eig, eig_fgt=False):
@@ -171,7 +171,7 @@ class EMRegistration(object):
 		self.X = torch.from_numpy(X).type(dtype).to(device)
 		self.Y = torch.from_numpy(Y).type(dtype).to(device)
 		self.TY = self.Y.clone()
-		self.sigma2 = (initialize_sigma2(X, Y) if sigma2 is None else sigma2).to(device)
+		self.sigma2 = (initialize_sigma2(self.X, self.Y) if sigma2 is None else sigma2)
 		(self.N, self.D) = self.X.shape
 		(self.M, _) = self.Y.shape
 		self.tolerance = 0.001 if tolerance is None else tolerance
@@ -185,7 +185,6 @@ class EMRegistration(object):
 		self.P1 = torch.zeros((self.M,), device=device)
 		self.PX = torch.zeros((self.M, self.D), device=device)
 		self.Np = 0
-		self.pi = torch.tensor(np.pi).to(device)
 		self.device = device
 		self.dtype = dtype
 
@@ -249,31 +248,9 @@ class EMRegistration(object):
 		"""
 		Perform one iteration of the EM algorithm.
 		"""
-		self.expectation()
+		self.P, self.Pt1, self.P1, self.Np, self.PX = expectation(self.X, self.TY, self.sigma2, self.D, self.w, self.M, self.N)
 		self.maximization()
 		self.iteration += 1
-
-	def _expectation(self):
-		self.P, self.Pt1, self.P1, self.Np, self.PX = numba_exp(self.X, self.TY, self.sigma2, self.D, self.w, self.M, self.N)
-
-	def expectation(self):
-
-		"""
-		Compute the expectation step of the EM algorithm.
-		"""
-		dist = (self.X[None, :, :] - self.TY[:, None, :]) ** 2
-		P = dist.sum(axis=2)  # (M, N)
-		P = torch.exp(-P / (2 * self.sigma2))
-		c = (2 * self.pi * self.sigma2) ** (self.D / 2) * self.w / (1. - self.w) * self.M / self.N
-
-		den = P.sum(axis=0, keepdims=True)
-		den = torch.clamp(den, min=1e-7) + c
-
-		self.P = P / den
-		self.Pt1 = self.P.sum(axis=0)
-		self.P1 = self.P.sum(axis=1)
-		self.Np = self.P1.sum()
-		self.PX = self.P @ self.X
 
 	def maximization(self):
 		"""
@@ -282,3 +259,27 @@ class EMRegistration(object):
 		self.update_transform()
 		self.transform_point_cloud()
 		self.update_variance()
+
+
+def expectation(X, TY, sigma2, D, w, M, N):
+	"""
+	Compute the expectation step of the EM algorithm.
+	"""
+	dist = (X[None, :, :] - TY[:, None, :]) ** 2
+	P = dist.sum(axis=2)  # (M, N)
+	P = torch.exp(-P / (2 * sigma2))
+	c = (2 * torch.pi * sigma2) ** (D / 2) * w / (1. - w) * M / N
+
+	den = P.sum(axis=0, keepdims=True)
+	den = torch.clamp(den, min=1e-7) + c
+
+	P = P / den
+	Pt1 = P.sum(axis=0)
+	P1 = P.sum(axis=1)
+	Np = P1.sum()
+	PX = P @ X
+	return P, Pt1, P1, Np, PX
+
+
+if hasattr(torch, 'compile'):
+	expectation = torch.compile(expectation)
